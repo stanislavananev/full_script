@@ -12,6 +12,7 @@ import plotly.graph_objs as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 warnings.filterwarnings("ignore")
+from model import super_model, my_custom_scorer
 ##
 
 
@@ -76,11 +77,27 @@ def test_model(grid_df, model_path, indexes, err_list_save_path):
     return full_err_list
 
 
+def test_one_model(grid_df, model_path, index):
+    counter = 0
+    err = 0
+    loaded_model = pickle.load(open(model_path + '{}.pickle'.format(index), "rb"))
+    pred_df = pd.DataFrame(columns=['Pt', 'Pb'], dtype='float32')
+    for i in range(0, len(grid_df)):
+        pred_df.loc[i, 'Pt'] = grid_df.loc[i, 'Pt']
+        pred_df.loc[i, 'Pb'] = loaded_model.predict(grid_df.loc[i, :])
+
+    for i in range(0, len(pred_df)):
+        if pred_df.loc[i, 'Pt'] > pred_df.loc[i, 'Pb'] or pred_df.loc[i, 'Pb'] <= 0:
+            err = 1
+            break
+    return err
+
+
 def check_the_model(model_number, model_path, grid_df):
     pred_df = pd.DataFrame(columns=['Pb'], dtype='float32')
     full_pred_df = grid_df.copy()
     loaded_model = pickle.load(
-        open(model_path + '/no_inter_model{}.pickle'.format(model_number), "rb"))
+        open(model_path + '{}.pickle'.format(model_number), "rb"))
     for i in range(0, len(grid_df)):
         pred_df.loc[i, 'Pb'] = loaded_model.predict(grid_df.loc[i, :])
     full_pred_df = pd.concat((full_pred_df, pred_df['Pb']), axis=1)
@@ -138,5 +155,37 @@ def plot_results(prediction_df, err_num, dict_path, image_path):
 # dict_path = dictionary_path
 # dictionary = pickle.load(
 #     open(dict_path, "rb"))
-##
 
+
+def internal_check(grid_df, model, index):
+    counter = 0
+    err = 0
+    pred_df = pd.DataFrame(columns=['Pt', 'Pb'], dtype='float32')
+    for i in range(0, len(grid_df)):
+        pred_df.loc[i, 'Pt'] = grid_df.loc[i, 'Pt']
+        pred_df.loc[i, 'Pb'] = model.predict(grid_df.loc[i, :])
+
+    for i in range(0, len(pred_df)):
+        if pred_df.loc[i, 'Pt'] > pred_df.loc[i, 'Pb'] or pred_df.loc[i, 'Pb'] <= 0:
+            err = 1
+            break
+    return err
+
+
+def train_and_check(data, model_path, model_index, desired_score, seed):
+    grid = generate_grid()
+    test_size = int(data.shape[0]*0.15)
+    temp_data = data.copy().sample(frac=1, random_state=seed)
+    train = temp_data.copy().iloc[:data.shape[0] - test_size, :]
+    test = temp_data.copy().iloc[data.shape[0] - test_size:, :]
+    good_model_flag = 1
+    model = super_model()
+    model.fit(train)
+    x, y = test.iloc[:, :-1], test.iloc[:, -1]
+    score = model.evaluate(x, y)
+    # if internal_check(grid, model, model_index) == 0:
+    if internal_check(grid, model, model_index) == 0 and score >= desired_score:
+        filename = model_path + '{}.pickle'.format(model_index)
+        pickle.dump(model, open(filename, "wb"))
+        good_model_flag = 0
+    return score, good_model_flag
